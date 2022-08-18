@@ -1,3 +1,4 @@
+from code import interact
 import random
 from traceback import print_tb
 
@@ -11,7 +12,7 @@ from torch_scatter import scatter_mean
 
 from utils import *
 
-device = 'cuda:1'
+device = 'cuda:0'
 
 
 class GAT(nn.Module):
@@ -50,10 +51,11 @@ class Aggregator(nn.Module):
     """
     Relational Path-aware Convolution Network
     """
-    def __init__(self, n_genes, n_factors):
+    def __init__(self, n_genes, n_factors, reindex_dict):
         super(Aggregator, self).__init__()
         self.n_genes = n_genes
         self.n_factors = n_factors
+        self.reindex_dict = reindex_dict
 
     def forward(self, GATConv, sl_graph, entity_emb, gene_sl_emb, latent_emb,
                 edge_index, edge_type, interact_mat, weight, disen_weight_att):
@@ -62,29 +64,31 @@ class Aggregator(nn.Module):
         channel = entity_emb.shape[1]
         n_genes = self.n_genes
         n_factors = self.n_factors
+        """KG aggregate"""
+        #加模块？？？解耦合？？？
 
         head, tail = edge_index
         edge_relation_emb = weight[edge_type]
         neigh_relation_emb = entity_emb[
-            tail] * edge_relation_emb  
+            tail] * edge_relation_emb  # [-1, channel] 逐元素相乘
         entity_agg = scatter_mean(src=neigh_relation_emb,
                                   index=head,
                                   dim_size=n_entities,
                                   dim=0)
+        #scatter函数，将index对应值相同的元素加到对应index位置
 
         latent_emb = torch.mm(nn.Softmax(dim=-1)(disen_weight_att),
                               weight)  #[n_factors, channel]
-        score_ = torch.mm(gene_sl_emb[:sl_graph.num_nodes()], latent_emb.t())
+        score_ = torch.mm(gene_sl_emb, latent_emb.t())
 
+        score = nn.Softmax(dim=1)(score_).unsqueeze(-1)
 
-        score = nn.Softmax(dim=1)(score_).unsqueeze(
-            -1) 
-      
-        gene_agg = torch.sparse.mm(
-            interact_mat, entity_emb) 
-        gene_agg = gene_agg[:sl_graph.num_nodes()]
+        gene_list = [i for i in range(self.n_genes)]
+        reidx_dict = dict([(key, self.reindex_dict[key]) for key in gene_list])
+        reidx = torch.tensor(list(reidx_dict.values()))
+        gene_agg = torch.sparse.mm(interact_mat, entity_emb[reidx])
         output_sl = []
-        input_emb = entity_agg[:sl_graph.num_nodes()]
+        input_emb = entity_agg[reidx]
         #input_emb = input_emb * latent_emb[i]
         for i in range(self.n_factors):
             output_emb = GATConv[i](sl_graph, input_emb)
@@ -95,8 +99,7 @@ class Aggregator(nn.Module):
         disen_weight = torch.mm(nn.Softmax(dim=-1)(disen_weight_att),
                                 weight).expand(n_genes, n_factors, channel)
 
-        gene_return = gene_agg + (output_sl *
-                                  score[:sl_graph.num_nodes()]).sum(dim=1)
+        gene_return = gene_agg + (output_sl * score).sum(dim=1)
         #disen_weight_att [n_factors, n_relations]
         #weight [n_relations, channel]
 
@@ -115,44 +118,54 @@ class GraphConv(nn.Module):
                  n_relations,
                  interact_mat,
                  ind,
+                 reindex_dict,
                  node_dropout_rate=0.5,
                  mess_dropout_rate=0.1):
         super(GraphConv, self).__init__()
-        self.sl_graph = load_sl_graph()
         self.GATConv = nn.ModuleList()
         self.convs = nn.ModuleList()
         self.interact_mat = interact_mat
+        self.sl_graph = self.get_sl_graph()
         self.n_relations = n_relations
         self.n_genes = n_genes
         self.n_factors = n_factors
-        self.node_dropout_rate = node_dropout_rate  
-        self.mess_dropout_rate = mess_dropout_rate  
-        self.ind = ind  
+        self.reindex_dict = reindex_dict
+        self.node_dropout_rate = node_dropout_rate
+        self.mess_dropout_rate = mess_dropout_rate
+        self.ind = ind
         for i in range(self.n_factors):
             self.GATConv.append(
-                GAT(1, channel, channel, channel, [4, 4], F.leaky_relu, 0., 0.,
-                    0.2, True))
-        self.temperature = 0.2  
+                GAT(1, channel, channel, channel, [8, 8], F.leaky_relu, 0.2,
+                    0.2, 0.2, True))
+        self.temperature = 0.2
         initializer = nn.init.xavier_uniform_
-        weight = initializer(torch.empty(n_relations,
-                                         channel)) 
-        self.weight = nn.Parameter(weight) 
+        weight = initializer(torch.empty(n_relations, channel))
+        self.weight = nn.Parameter(weight)
 
         disen_weight_att = initializer(torch.empty(n_factors, n_relations))
         self.disen_weight_att = nn.Parameter(disen_weight_att)
 
         for i in range(n_hops):
-            self.convs.append(Aggregator(n_genes=n_genes, n_factors=n_factors))
+            self.convs.append(
+                Aggregator(n_genes=n_genes,
+                           n_factors=n_factors,
+                           reindex_dict=self.reindex_dict))
 
         self.dropout = nn.Dropout(p=mess_dropout_rate)  # mess dropout
+
+    def get_sl_graph(self):
+        interact_mat = self.interact_mat
+        indices = interact_mat._indices()
+        g = dgl.graph((indices[0], indices[1]))
+        return g.to(device)
 
     def _edge_sampling(self, edge_index, edge_type, rate=0.5):
         # edge_index: [2, -1]
         # edge_type: [-1]
-        n_edges = edge_index.shape[1]  
+        n_edges = edge_index.shape[1]
         random_indices = np.random.choice(n_edges,
                                           size=int(n_edges * rate),
-                                          replace=False)  
+                                          replace=False)
         return edge_index[:, random_indices], edge_type[random_indices]
 
     def _sparse_dropout(self, x, rate=0.5):
@@ -186,6 +199,7 @@ class GraphConv(nn.Module):
     #     mi_score = - torch.sum(torch.log(pos_scores / ttl_scores))
     #     return mi_score
 
+    #计算相关性
     def _cul_cor(self):
         def CosineSimilarity(tensor_1, tensor_2):
             # tensor_1, tensor_2: [channel]
@@ -270,8 +284,7 @@ class GraphConv(nn.Module):
                                                 self.node_dropout_rate)
 
         entity_res_emb = entity_emb  # [n_entity, channel]
-        gene_res_emb = gene_emb[:self.sl_graph.num_nodes(
-        )]  
+        gene_res_emb = gene_emb  #[n_gene, channel]
         cor = self._cul_cor()
         for_reg = None
         for i in range(len(self.convs)):
@@ -305,10 +318,11 @@ class GraphConv(nn.Module):
 
 class SLModel(nn.Module):
     def __init__(self, n_genes, n_relations, n_entities, args_config, kg,
-                 sl_adj):
+                 sl_adj, reindex_dict):
         super(SLModel, self).__init__()
         self.n_genes = n_genes
         self.n_relations = n_relations
+        self.reindex_dict = {y: x for x, y in reindex_dict.items()}
         self.n_entities = n_entities  # include items
         self.decay = args_config.l2
         self.sim_decay = args_config.sim_regularity
@@ -349,6 +363,7 @@ class SLModel(nn.Module):
                          n_factors=self.n_factors,
                          interact_mat=self.interact_mat,
                          ind=self.ind,
+                         reindex_dict=self.reindex_dict,
                          node_dropout_rate=self.node_dropout_rate,
                          mess_dropout_rate=self.mess_dropout_rate)
 
@@ -371,10 +386,9 @@ class SLModel(nn.Module):
     def forward(self, gene_a, gene_b):
         gene_a = gene_a
         gene_b = gene_b
-
         gene_emb = self.all_embed[:self.n_genes, :]
         item_emb = self.all_embed[self.n_genes:, :]
-        
+
         entity_gcn_emb, gene_gcn_emb, cor, cor_2 = self.gcn(
             gene_emb,
             item_emb,
@@ -384,15 +398,18 @@ class SLModel(nn.Module):
             self.interact_mat,
             mess_dropout=self.mess_dropout,
             node_dropout=self.node_dropout)
-        e_u=gene_gcn_emb[gene_a]
-        e_e=entity_gcn_emb[gene_b]
+        e_u = gene_gcn_emb[gene_a]
+        reidx_dict = dict([(key, self.reindex_dict[int(key)])
+                           for key in gene_b])
+        e_e = entity_gcn_emb[torch.tensor(list(reidx_dict.values()))]
+        #e_e = entity_gcn_emb[gene_b]
 
         scores = (e_u * e_e).sum(dim=1)
         regularizer = (torch.norm(e_u)**2 + torch.norm(e_e)**2) / 2
         emb_loss = self.decay * regularizer / len(gene_a)
         cor_loss = self.sim_decay * (cor + cor_2)
         return torch.sigmoid(scores), emb_loss, cor_loss, cor
-        
+
     def generate(self):
         gene_emb = self.all_embed[:self.n_genes, :]
         item_emb = self.all_embed[self.n_genes:, :]
@@ -422,5 +439,3 @@ class SLModel(nn.Module):
         cor_loss = self.sim_decay * cor
 
         return mf_loss + emb_loss + cor_loss, mf_loss, emb_loss, cor
-
-    

@@ -1,0 +1,38 @@
+relation_id relation_name a_type b_type
+0   (Gene, participates, cellular component) 0 1     
+1   (Gene, participates, biological process) 0 2
+2   (Anatomy, expresses, gene) 9 0
+3   (Gene, regulates, gene) 0 0
+4   (Gene, interacts, gene) 0 0     
+5   (Disease, associates, gene) 6 0
+6   (Gene, participates, molecular function) 0 4
+7   (Gene, covaries, gene) 0 0
+8   (Gene, participates, pathway) 0 5
+9   (Disease, upregulates, gene) 6 0
+10  (Compound, causes, side effect) 7 3
+11  (Compound, binds, gene) 7 0
+12  (Anatomy, upregulates, gene) 9 0
+13  (Disease, presents, symptom) 6 10
+14  (Disease, localizes, anatomy) 6 9
+15  (Compound, treats, disease) 7 6
+16  (Disease, resembles, disease) 6 6
+17  (Disease, downregulates, gene) 6 0
+18  (Compound, upregulates, gene) 7 0
+19  (Compound, downregulates, gene) 7 0
+20  (Compound, resembles, compound) 7 7
+21  (Pharmacologic class, includes, compound) 8 7
+22  (Compound, palliates, disease) 7 
+23  (Anatomy, downregulates, gene)
+
+
+0 Gene
+1 Cellular component 
+2 Biological process 
+3 Side effect 
+4 Molecular function 
+5 Pathway
+6 Disease
+7 Compound 
+8 Pharmacologic class 
+9 Anatomy
+10 Symptom

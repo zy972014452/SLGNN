@@ -12,8 +12,8 @@ from sklearn.metrics import roc_auc_score, precision_recall_curve, auc
 from sklearn.model_selection import train_test_split
 from torch._C import device
 from tqdm import tqdm
-device='cuda:1'
 
+device = 'cuda:0'
 
 
 def DistanceCorrelation(tensor_1, tensor_2):
@@ -39,18 +39,11 @@ def DistanceCorrelation(tensor_1, tensor_2):
     dcov_BB = torch.sqrt(torch.max((B * B).sum() / channel**2, zero) + 1e-8)
     return dcov_AB / torch.sqrt(dcov_AA * dcov_BB + 1e-8)
 
-def load_sl_graph():
-    sl_data=pd.read_csv('../data/SL/sl2id.txt',sep='\t')
-    sl_data=sl_data[sl_data['label']==1]
-    src_nodes=torch.tensor(sl_data['gene_a'])
-    dst_nodes=torch.tensor(sl_data['gene_b'])
-    g=dgl.graph((src_nodes,dst_nodes))
-    g=dgl.add_self_loop(g)
-    g=dgl.add_reverse_edges(g)
-    return g.to(device)
+
+
 
 def load_data(args):
-    kg2id_np = np.loadtxt('../data/SL/kg2id' + '.txt', dtype=np.int64)
+    kg2id_np = np.loadtxt('../data/SL/raw/kg2id' + '.txt', dtype=np.int64)
     max = 0
     r_max = 0
     for i in range(len(kg2id_np)):
@@ -65,6 +58,7 @@ def load_data(args):
             r_max = r
     n_entities = max + 1
     n_relations = r_max + 1
+
     graph = nx.MultiDiGraph()
     for i in range(len(kg2id_np)):
         h = kg2id_np[i][0]
@@ -73,46 +67,20 @@ def load_data(args):
         graph.add_edge(h, t, key=r)
         if args.inverse_r == True:
             graph.add_edge(t, h, key=r + n_relations)
-
-    sl_data = pd.read_csv('../data/SL/sl2id.txt', sep='\t')
-    sl_pos = sl_data[sl_data['label'] == 1]
-
-    sl_adj = np.zeros((n_entities, n_entities), dtype=float)
-
-    src = list(sl_pos['gene_a'])
-    dst = list(sl_pos['gene_b'])
-    zipped = list(zip(src, dst))
-    for i, j in zipped:
-        sl_adj[i][j] = 1.
-    for i in range(n_entities):
-        s = sl_adj[i].sum()
-        if s > 0:
-            sl_adj[i] = sl_adj[i] / s
-
-    sl_adj = csr_matrix(sl_adj)
-    return graph, sl_adj, n_entities, n_relations
+    return graph,n_entities, n_relations
 
 
+class KGCNDataset(torch.utils.data.Dataset):
+    def __init__(self, df):
+        self.df = df
 
-def split_full_G(df_dataset):
-    a = list(range(len(df_dataset)))
-    random.shuffle(a)
-    m = int(len(a) / 5)
-    list_1 = a[:m]
-    list_2 = a[m:m * 2]
-    list_3 = a[m * 2:m * 3]
-    list_4 = a[m * 3:m * 4]
-    list_5 = a[m * 4:]
+    def __len__(self):
+        return len(self.df)
 
-    list_all = []
-    list_all.append(list_1)
-    list_all.append(list_2)
-    list_all.append(list_3)
-    list_all.append(list_4)
-    list_all.append(list_5)
-    return list_all
-def get_test_val_G(aa):
-    nn = len(aa)
-    bb = aa[:int(nn / 2)]
-    cc = aa[int(nn / 2):]
-    return bb,cc
+    def __getitem__(self, idx):
+        gene_a = np.array(self.df.iloc[idx]['gene_a'])
+        gene_b = np.array(self.df.iloc[idx]['gene_b'])
+        label = np.array(self.df.iloc[idx]['label'], dtype=np.float32)
+        return gene_a, gene_b, label
+
+
