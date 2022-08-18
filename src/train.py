@@ -32,7 +32,7 @@ parser.add_argument('--batch_size', type=int, default=2048, help='batch size')
 parser.add_argument('--dim', type=int, default=64, help='embedding size')
 parser.add_argument('--l2',
                     type=float,
-                    default=1e-2,
+                    default=1e-4,
                     help='l2 regularization weight')
 parser.add_argument('--lr', type=float, default=3e-3, help='learning rate')
 parser.add_argument('--sim_regularity',
