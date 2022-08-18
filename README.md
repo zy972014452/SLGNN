@@ -1,5 +1,5 @@
 # SLGNN：Synthetic lethality prediction in human cancers based on  factor-aware knowledge graph neural network
-![image](https://github.com/zy972014452/SLGNN/blob/main/framework.pdf)
+![image](https://github.com/zy972014452/SLGNN/blob/main/framework.png)
 
 unzip the data file data/SL.zip
 
