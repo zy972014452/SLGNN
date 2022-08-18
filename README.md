@@ -27,13 +27,13 @@ Then go to the folder '/src'
 
 You can directly run the following code to train the model:
   
-    python source/main.py   --epoch 100 \
-                              --batch_size 1024 \
-                              --dim 64 \
-                              --l2 0.0001 \
-                              --lr 0.003 \
-                              --sim_regularity 0.001 \
-                              --inverse_r True \
-                              --node_dropout_rate 0.5 \
+    python train.py   --epoch 100 \
+                      --batch_size 1024 \
+                      --dim 64 \
+                      --l2 0.0001 \
+                      --lr 0.003 \
+                      --sim_regularity 0.001 \
+                      --inverse_r True \
+                      --node_dropout_rate 0.5 \
                               
 The rest of the hyperparameters can be viewed in the code
