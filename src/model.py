@@ -65,17 +65,15 @@ class Aggregator(nn.Module):
         n_genes = self.n_genes
         n_factors = self.n_factors
         """KG aggregate"""
-        #加模块？？？解耦合？？？
 
         head, tail = edge_index
         edge_relation_emb = weight[edge_type]
         neigh_relation_emb = entity_emb[
-            tail] * edge_relation_emb  # [-1, channel] 逐元素相乘
+            tail] * edge_relation_emb  # [-1, channel] 
         entity_agg = scatter_mean(src=neigh_relation_emb,
                                   index=head,
                                   dim_size=n_entities,
                                   dim=0)
-        #scatter函数，将index对应值相同的元素加到对应index位置
 
         latent_emb = torch.mm(nn.Softmax(dim=-1)(disen_weight_att),
                               weight)  #[n_factors, channel]
@@ -199,7 +197,6 @@ class GraphConv(nn.Module):
     #     mi_score = - torch.sum(torch.log(pos_scores / ttl_scores))
     #     return mi_score
 
-    #计算相关性
     def _cul_cor(self):
         def CosineSimilarity(tensor_1, tensor_2):
             # tensor_1, tensor_2: [channel]
