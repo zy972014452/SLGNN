@@ -37,12 +37,10 @@ class KGDataset(Dataset):
 
     @property
     def entity_count(self):
-        #加一个当作padding，方便dropout
         return max(self.kg_data['t'].max(), self.kg_data['h'].max()) + 2
 
     @property
     def relation_count(self):
-        #加一个当作padding，方便dropout
         return self.kg_data['r'].max() + 2
 
     def generate_kg_data(self, kg_data):
